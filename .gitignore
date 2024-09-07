@@ -1,0 +1,45 @@
+# Ignore data and logs directories
+data/
+logs/
+
+# Virtual environment folders (env, venv)
+.venv/
+venv/
+ENV/
+env/
+ENV/
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore PyCharm project files
+.idea/
+
+# Ignore PyCharm specific files
+*.iml
+*.iws
+*.ipr
+
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+*.cover
+*.py,cover
+.pytest_cache/
+cover/
+coverage.xml
+
+# Logs & Errors
+*.log
+*.err
+
+# macOS Finder
+.DS_Store
+
+# VS Code settings
+.vscode/

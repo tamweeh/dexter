@@ -1,0 +1,53 @@
+<html>
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg th{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg .tg-1wig{font-weight:bold;text-align:left;vertical-align:top}
+.tg .tg-c3ow{border-color:inherit;text-align:center;vertical-align:top}
+.tg .tg-fymr{border-color:inherit;font-weight:bold;text-align:left;vertical-align:top}
+.tg .tg-0pky{border-color:inherit;text-align:left;vertical-align:top}
+.tg .tg-0lax{text-align:left;vertical-align:top}
+
+</style>
+<table class="tg">
+    <thead>
+    <tr>
+        <th class="tg-fymr">METHOD</th>
+        <th class="tg-fymr">PATH</th>
+        <th class="tg-fymr">PAYLOAD</th>
+        <th class="tg-1wig">JSON FORMAT</th>
+        <th class="tg-fymr">RESPONSE</th>
+        <th class="tg-fymr">DESCRIPTION</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+        <td class="tg-c3ow">GET</td>
+        <td class="tg-0pky">/columns</td>
+        <td class="tg-0pky">None</td>
+        <td class="tg-0lax"></td>
+        <td class="tg-0pky">JSON response with column details</td>
+        <td class="tg-0pky">Column details include: column ID, username, and query running</td>
+    </tr>
+    <tr>
+        <td class="tg-c3ow">POST</td>
+        <td class="tg-0pky">/add_column</td>
+        <td class="tg-0pky">JSON containing a query string</td>
+        <td class="tg-0lax"></td>
+        <td class="tg-0pky">JSON response with success or failure result</td>
+        <td class="tg-0pky">For valid payloads, this request will add a new column in the deck and submit the query string to start collecting data</td>
+    </tr>
+    <tr>
+        <td class="tg-c3ow">POST</td>
+        <td class="tg-0pky">/remove_column</td>
+        <td class="tg-0pky">JSON containing the column id to remove</td>
+        <td class="tg-0lax">{ "column_id": "1635723263056683011" }</td>
+        <td class="tg-0pky">JSON response with success or failure of column removal</td>
+        <td class="tg-0pky">For valid payloads, this request will delete an existing column by using the column ID</td>
+    </tr>
+    </tbody>
+</table>
+</html>
