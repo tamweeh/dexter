@@ -24,79 +24,79 @@ LOCAL_TIME = pytz.timezone('Asia/Riyadh')
 def random_sleep(): time.sleep(randrange(2, 6))
 
 
-def convert_datetime(created_at: str) -> str:
+def convert_datetime(created_at: str) -> tuple[str, str]:
     utc_time = dt.strptime(created_at, '%a %b %d %H:%M:%S %z %Y')
     local_dt = utc_time.replace(tzinfo=pytz.utc).astimezone(LOCAL_TIME)
-    return local_dt.strftime('%Y-%m-%d %H:%M:%S')
+    return local_dt.strftime('%Y-%m-%d %H:%M:%S'), utc_time.strftime('%Y-%m-%d %H:%M:%S')
 
 
 def parse_tweets(posts: list, rule: str, file_name: str = './data/parsed_tweets.jsonl'):
-    with open(file_name, 'a') as f:
-        for post in posts:
-            if str(post.get('entryId', '')).startswith('tweet'):
-                try:
-                    # Extract relevant parts of the tweet data
-                    result = post.get('content', {}).get('itemContent', {}).get('tweet_results', {}).get('result', {})
-                    post_content = result.get('tweet', {}) if result.get('__typename') == 'TweetWithVisibilityResults' else result
-                    legacy_data = post_content.get('legacy', {})
+    # with open(file_name, 'a') as f:
+    for post in posts:
+        if str(post.get('entryId', '')).startswith('tweet'):
+            try:
+                # Extract relevant parts of the tweet data
+                result = post.get('content', {}).get('itemContent', {}).get('tweet_results', {}).get('result', {})
+                post_content = result.get('tweet', {}) if result.get('__typename') == 'TweetWithVisibilityResults' else result
+                legacy_data = post_content.get('legacy', {})
 
-                    # User details
-                    user_content = post_content.get('core', {}).get('user_results', {}).get('result', {}).get('legacy', {})
-                    user_data = UserData(
-                        user_id=post_content.get('core', {}).get('user_results', {}).get('result', {}).get('rest_id', ''),
-                        username=user_content.get('name', ''),
-                        screen_name=user_content.get('screen_name', ''),
-                        followers=user_content.get('followers_count', 0),
-                        verified=user_content.get('verified', False),
-                        verified_type='none' if not user_content.get('verified') else 'blue',
-                        posts_count=user_content.get('statuses_count', 0),
-                        account_mentions=[
-                            AccountMention(
-                                screen_name=mention.get('screen_name', ''),
-                                name=mention.get('name', ''),
-                                id_str=mention.get('id_str', '')
-                            ) for mention in legacy_data.get('entities', {}).get('user_mentions', [])
-                        ]
-                    )
+                # User details
+                user_content = post_content.get('core', {}).get('user_results', {}).get('result', {}).get('legacy', {})
+                user_data = UserData(
+                    user_id=post_content.get('core', {}).get('user_results', {}).get('result', {}).get('rest_id', ''),
+                    username=user_content.get('screen_name', ''),
+                    display_name=user_content.get('name', ''),
+                    followers=user_content.get('followers_count', 0),
+                    verified=user_content.get('verified', False),
+                    verified_type='none' if not user_content.get('verified') else 'blue',
+                    posts_count=user_content.get('statuses_count', 0),
+                    account_mentions=[
+                        AccountMention(
+                            username=mention.get('screen_name', ''),
+                            display_name=mention.get('name', ''),
+                            id_str=mention.get('id_str', '')
+                        ) for mention in legacy_data.get('entities', {}).get('user_mentions', [])
+                    ]
+                )
 
-                    # Entities: hashtags, URLs, media
-                    entities = Entities(
-                        hashtags=[hashtag.get('text') for hashtag in legacy_data.get('entities', {}).get('hashtags', [])],
-                        urls=[url.get('expanded_url') for url in legacy_data.get('entities', {}).get('urls', [])],
-                        media_urls=[media.get('media_url_https') for media in legacy_data.get('extended_entities', {}).get('media', [])]
-                    )
+                # Entities: hashtags, URLs, media
+                entities = Entities(
+                    hashtags=[hashtag.get('text') for hashtag in legacy_data.get('entities', {}).get('hashtags', [])],
+                    urls=[url.get('expanded_url') for url in legacy_data.get('entities', {}).get('urls', [])],
+                    media_urls=[media.get('media_url_https') for media in legacy_data.get('extended_entities', {}).get('media', [])]
+                )
 
-                    # Post type logic
-                    post_type = (
-                        'quoted' if legacy_data.get('is_quote_status', False)
-                        else 'reply' if legacy_data.get('in_reply_to_status_id_str')
-                        else 'retweet' if post_content.get('retweeted_status_result')
-                        else 'post'
-                    )
+                # Post type logic
+                post_type = (
+                    'quoted' if legacy_data.get('is_quote_status', False)
+                    else 'reply' if legacy_data.get('in_reply_to_status_id_str')
+                    else 'retweet' if post_content.get('retweeted_status_result')
+                    else 'post'
+                )
+                local_time, utc = convert_datetime(legacy_data.get('created_at'))
 
-                    # Create a PostData model
-                    post_data = PostData(
-                        posted_date_utc=legacy_data.get('created_at'),
-                        post_id=legacy_data.get('id_str'),
-                        text=legacy_data.get('full_text', ''),
-                        local_posted=convert_datetime(legacy_data.get('created_at')),
-                        post_type=post_type,
-                        language=legacy_data.get('lang', 'en'),
-                        likes=legacy_data.get('favorite_count', 0),
-                        retweets=legacy_data.get('retweet_count', 0),
-                        quotes=legacy_data.get('quote_count', 0),
-                        conversation_id=legacy_data.get('conversation_id_str'),
-                        user_data=user_data,
-                        entities=entities,
-                        geo_location=post_content.get('geo', {}).get('coordinates') if 'geo' in post_content else None,
-                        rule=rule
-                    )
+                # Create a PostData model
+                post_data = PostData(
+                    posted_date_utc=utc,
+                    post_id=legacy_data.get('id_str'),
+                    text=legacy_data.get('full_text', ''),
+                    local_posted=local_time,
+                    post_type=post_type,
+                    language=legacy_data.get('lang', 'en'),
+                    likes=legacy_data.get('favorite_count', 0),
+                    retweets=legacy_data.get('retweet_count', 0),
+                    quotes=legacy_data.get('quote_count', 0),
+                    conversation_id=legacy_data.get('conversation_id_str'),
+                    user_data=user_data,
+                    entities=entities,
+                    rule=rule
+                )
 
-                    # f.write(json.dumps(post_data.model_dump()) + '\n')
-                    produce_to_kafka('posts', post_data.model_dump(), post_data.language)
-                except Exception as e:
-                    print(post_data.model_dump())
-                    logger.error(f"{e}", exc_info=True)
+                # f.write(json.dumps(post_data.model_dump()) + '\n')
+                produce_to_kafka('posts', post_data.model_dump(), post_data.language)
+            except Exception as e:
+                print(post_data.model_dump())
+                logger.error(f"{e}", exc_info=True)
 
 
 def parse_json(response: Response):
@@ -114,21 +114,21 @@ def parse_json(response: Response):
 
 
 def parse_headers(request):
-    try:
-        if 'GetUserClaims' in request.url:
+    if 'GetUserClaims' in request.url:
+        try:
             headers = request.all_headers()
             key_list = [':authority', ':method', ':path', ':scheme']
             [headers.pop(key) for key in key_list]
             with open('./stream/resources/headers.json', mode='w', encoding='utf-8') as headers_file:
                 json.dump(headers, headers_file)
-    except Exception as e:
-        logger.error(f"Error @{inspect.currentframe().f_code.co_name} caller={inspect.currentframe().f_back.f_code.co_name} error={e}", exc_info=True)
-        pass
+        except Exception as e:
+            logger.error(f"Error @{inspect.currentframe().f_code.co_name} caller={inspect.currentframe().f_back.f_code.co_name} error={e}", exc_info=True)
+            pass
 
 
 def load_deck(playwright: Playwright, username, password, email):
     chromium = playwright.chromium
-    browser = chromium.launch(headless=False, args=["--start-maximized"])
+    browser = chromium.launch(headless=True, args=["--start-maximized"])
     context = browser.new_context(no_viewport=True)
     page = context.new_page()
 
@@ -166,21 +166,25 @@ def load_deck(playwright: Playwright, username, password, email):
     logger.info(f"User login successful")
 
     while True:
-        time.sleep(10)
+        time.sleep(20)
         page.mouse.wheel(0, 0)
-        status = requests.get("http://dexter-columns:5000/status").json()['status']
-        if status == 'reload':
-            res = requests.post("http://dexter-columns:5000/reload", json={"page": "idle"})
-            logger.info(f"{res.json().get('message', {})}, reloading page") if res.status_code == 200 else logger.error(f"{res.text}")
-            page.close()
-            page = context.new_page()
-            page.on("response", lambda response: parse_json(response))
-            page.wait_for_load_state('load')
-            page.goto("https://pro.twitter.com")
+        try:
+            status = requests.get("http://dexter-columns:5000/status").json()['status']
+            if status == 'reload':
+                res = requests.post("http://dexter-columns:5000/reload", json={"page": "running"})
+                logger.info(f"{res.json().get('message', {})}, reloading page") if res.status_code == 200 else logger.error(f"{res.text}")
+                page.close()
+                page = context.new_page()
+                page.on("response", lambda response: parse_json(response))
+                page.wait_for_load_state('load')
+                page.goto("https://pro.twitter.com")
+                continue
+        except Exception as e:
+            logger.error(f"{e}")
             continue
 
         if dt.utcnow().strftime('%H:%M:%S') == '00:00:00':
-            logger.info("Reloading page")
+            logger.info("New day - Reloading page")
             page.goto("https://pro.twitter.com")
 
 

@@ -3,8 +3,8 @@ from typing import List, Optional
 
 
 class AccountMention(BaseModel):
-    screen_name: str = Field(default="")
-    name: str = Field(default="")
+    username: str = Field(default="")
+    display_name: str = Field(default="")
     id_str: Optional[str] = None
 
 
@@ -17,7 +17,7 @@ class Entities(BaseModel):
 class UserData(BaseModel):
     user_id: Optional[str]
     username: str = ""
-    screen_name: str = ""
+    display_name: str = ""
     followers: int = 0
     verified: bool = False
     verified_type: str = "none"
@@ -38,5 +38,5 @@ class PostData(BaseModel):
     conversation_id: Optional[str]
     user_data: UserData
     entities: Entities
-    geo_location: Optional[List[float]] = None
     rule: str
+    # geo_location: Optional[List[float]] = None
