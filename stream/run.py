@@ -7,11 +7,12 @@ import json
 import time
 import re
 
-from playwright.sync_api import sync_playwright, Response
+from playwright.sync_api import sync_playwright, Response, Playwright
 import pytz
 
 from .logger import get_logger
 from .models import PostData, UserData, Entities, AccountMention
+from .producer import produce_to_kafka
 
 
 date = dt.now().strftime('%Y%m%d')
@@ -75,9 +76,9 @@ def parse_tweets(posts: list, rule: str, file_name: str = './data/parsed_tweets.
 
                     # Create a PostData model
                     post_data = PostData(
+                        posted_date_utc=legacy_data.get('created_at'),
                         post_id=legacy_data.get('id_str'),
                         text=legacy_data.get('full_text', ''),
-                        posted_date_utc=legacy_data.get('created_at'),
                         local_posted=convert_datetime(legacy_data.get('created_at')),
                         post_type=post_type,
                         language=legacy_data.get('lang', 'en'),
@@ -91,81 +92,11 @@ def parse_tweets(posts: list, rule: str, file_name: str = './data/parsed_tweets.
                         rule=rule
                     )
 
-                    # Write parsed tweet to file in JSON format
-                    # f.write(post_data.model_dump_json() + '\n')
-                    f.write(json.dumps(post_data.model_dump()) + '\n')
+                    # f.write(json.dumps(post_data.model_dump()) + '\n')
+                    produce_to_kafka('posts', post_data.model_dump(), post_data.language)
                 except Exception as e:
                     print(post_data.model_dump())
                     logger.error(f"{e}", exc_info=True)
-
-# def parse_tweets(posts: list, rule: str, file_name: str = './data/parsed_tweets.jsonl'):
-#     def extract_user_data(user_result):
-#         return user_result.get('core', {}).get('user_results', {}).get('result', {}).get('legacy', {})
-#
-#     with open(file_name, 'a') as f:
-#         for post in posts:
-#             if str(post.get('entryId', '')).startswith('tweet'):
-#                 post_data = {}
-#                 result = post.get('content', {}).get('itemContent', {}).get('tweet_results', {}).get('result', {})
-#
-#                 post_content = result.get('tweet', {}) if result.get('__typename') == 'TweetWithVisibilityResults' else result
-#                 user_content = extract_user_data(post_content)
-#                 legacy_data = post_content.get('legacy', {})
-#
-#                 # 1. Post metadata
-#                 post_data['post_id'] = legacy_data.get('id_str')
-#                 post_data['text'] = legacy_data.get('full_text', '')
-#                 post_data['posted_date_utc'] = legacy_data.get('created_at')
-#                 post_data['local_posted'] = convert_datetime(legacy_data.get('created_at'))
-#
-#                 # 2. Post type determination
-#                 post_data['post_type'] = (
-#                     'quoted' if legacy_data.get('is_quote_status', False)
-#                     else 'reply' if legacy_data.get('in_reply_to_status_id_str')
-#                     else 'retweet' if post_content.get('retweeted_status_result')
-#                     else 'post'
-#                 )
-#
-#                 # 3. Engagement metrics
-#                 post_data['language'] = legacy_data.get('lang', 'en')
-#                 post_data['likes'] = legacy_data.get('favorite_count', 0)
-#                 post_data['retweets'] = legacy_data.get('retweet_count', 0)
-#                 post_data['quotes'] = legacy_data.get('quote_count', 0)
-#
-#                 # 4. User details
-#                 post_data['user_id'] = post_content.get('core', {}).get('user_results', {}).get('result', {}).get('rest_id', '')
-#                 post_data['username'] = user_content.get('name', '')
-#                 post_data['screen_name'] = user_content.get('screen_name', '')
-#                 post_data['followers'] = user_content.get('followers_count', 0)
-#                 post_data['verified'] = user_content.get('verified', False)
-#                 post_data['verified_type'] = 'none' if not user_content.get('verified') else 'blue'
-#                 post_data['posts_count'] = user_content.get('statuses_count', 0)
-#
-#                 # 5. Entities: hashtags, URLs, media
-#                 post_data['hashtags'] = [hashtag.get('text') for hashtag in legacy_data.get('entities', {}).get('hashtags', [])]
-#                 post_data['urls'] = [url.get('expanded_url') for url in legacy_data.get('entities', {}).get('urls', [])]
-#                 post_data['media_urls'] = [media.get('media_url_https') for media in legacy_data.get('extended_entities', {}).get('media', [])]
-#
-#                 # 6. Account mentions (restored)
-#                 post_data['account_mentions'] = [
-#                     {
-#                         'screen_name': mention.get('screen_name', ''),
-#                         'name': mention.get('name', ''),
-#                         'id_str': mention.get('id_str', '')
-#                     }
-#                     for mention in legacy_data.get('entities', {}).get('user_mentions', [])
-#                 ]
-#
-#                 # 7. Optional fields and other fields
-#                 post_data['conversation_id'] = legacy_data.get('conversation_id_str')
-#                 post_data['geo_location'] = post_content.get('geo', {}).get('coordinates') if 'geo' in post_content else None
-#                 post_data['rule'] = rule
-#
-#                 # 8. Only keep non-null values
-#                 post_data = {k: v for k, v in post_data.items() if v is not None}
-#
-#                 # Write to file
-#                 f.write(json.dumps(post_data) + '\n')
 
 
 def parse_json(response: Response):
@@ -195,9 +126,9 @@ def parse_headers(request):
         pass
 
 
-def load_deck(playwright, username, password):
+def load_deck(playwright: Playwright, username, password, email):
     chromium = playwright.chromium
-    browser = chromium.launch(headless=True, args=["--start-maximized"])
+    browser = chromium.launch(headless=False, args=["--start-maximized"])
     context = browser.new_context(no_viewport=True)
     page = context.new_page()
 
@@ -216,6 +147,18 @@ def load_deck(playwright, username, password):
     random_sleep()
     page.keyboard.press("Enter")
     random_sleep()
+    if 'email' in page.locator('//h1[@role="heading"]').inner_text():
+        if email == 'example@email.com':
+            logger.warning(f"Stopping run. Generic email entered {email}")
+            page.close()
+            browser.close()
+            return {}
+        email_field = page.locator('//*[@id="layers"]/div/div/div/div/div/div/div[2]/div[2]/div/div/div[2]/div[2]/div[1]/div/div[2]/label/div/div[2]/div/input')
+        email_field.click()
+        email_field.type(email, delay=30)
+        random_sleep()
+        page.keyboard.press("Enter")
+    random_sleep()
     page.locator(selector="//input[@name='password']").type(password, delay=30)
     random_sleep()
     page.keyboard.press("Enter")
@@ -223,12 +166,11 @@ def load_deck(playwright, username, password):
     logger.info(f"User login successful")
 
     while True:
-        time.sleep(0.5)
+        time.sleep(10)
         page.mouse.wheel(0, 0)
-        status = requests.get("http://localhost:5000/status").json()['status']
-        # status = app.reload_status()['status']
+        status = requests.get("http://dexter-columns:5000/status").json()['status']
         if status == 'reload':
-            res = requests.post("http://localhost:5000/reload", json={"page": "idle"})
+            res = requests.post("http://dexter-columns:5000/reload", json={"page": "idle"})
             logger.info(f"{res.json().get('message', {})}, reloading page") if res.status_code == 200 else logger.error(f"{res.text}")
             page.close()
             page = context.new_page()
@@ -242,7 +184,7 @@ def load_deck(playwright, username, password):
             page.goto("https://pro.twitter.com")
 
 
-def get_stream(user, password):
+def get_stream(user, password, email):
     logger.info(f"Run started...")
     with sync_playwright() as pw:
-        load_deck(pw, user, password)
+        load_deck(pw, user, password, email)

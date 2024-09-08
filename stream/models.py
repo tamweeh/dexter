@@ -1,7 +1,5 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
-import json
-from datetime import datetime
 
 
 class AccountMention(BaseModel):
@@ -28,9 +26,9 @@ class UserData(BaseModel):
 
 
 class PostData(BaseModel):
+    posted_date_utc: str
     post_id: str
     text: str = ""
-    posted_date_utc: str
     local_posted: str
     post_type: str
     language: str

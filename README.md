@@ -20,7 +20,7 @@ from stream import run
 run.get_stream("TWITTER_USERNAME", "TWITTER_PASSOWRD")
 ```
 
-# Flask App
-Running this with your personal ip address and port will help controlling tweetdeck columns easier.
-You will be able to show existing columns, add and remove columnms.
+# FastAPI
+Running this will help in controlling deck columns.
+You will be able to show existing columns, add, update, and remove columns.
 NOTE: Currently the maximum allowed column count is set to 5, to avoid too many request errors, which can occur.
