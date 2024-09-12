@@ -3,3 +3,7 @@ requests~=2.32.3
 pytz~=2024.1
 playwright~=1.46.0
 confluent-kafka~=2.5.3
+redis~=5.0.8
+python-dotenv~=1.0.1
+pyfiglet~=1.0.2
+termcolor~=2.4.0

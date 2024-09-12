@@ -39,4 +39,4 @@ class PostData(BaseModel):
     user_data: UserData
     entities: Entities
     rule: str
-    # geo_location: Optional[List[float]] = None
+    collection_time: str

@@ -7,31 +7,32 @@ import json
 import time
 import re
 
-from playwright.sync_api import sync_playwright, Response, Playwright
+from playwright.sync_api import sync_playwright, Response, Playwright, Page, Request
+from dotenv import load_dotenv
 import pytz
 
+from .utils import get_timezone, redis_connection, x_api, dexter_columns_host
 from .logger import get_logger
 from .models import PostData, UserData, Entities, AccountMention
-from .producer import produce_to_kafka
+from .producer import send_message
 
-
-date = dt.now().strftime('%Y%m%d')
-timestamp = dt.now().strftime('%Y-%m-%d_%H-%M-%S')
+load_dotenv()
+# date = dt.now().strftime('%Y%m%d')
+# timestamp = dt.now().strftime('%Y-%m-%d_%H-%M-%S')
 logger = get_logger(log_name="Deckster")
-LOCAL_TIME = pytz.timezone('Asia/Riyadh')
+LOCAL_TIME = pytz.timezone(get_timezone())
+redis_client = redis_connection()
+
+def _random_sleep(): time.sleep(randrange(2, 6))
 
 
-def random_sleep(): time.sleep(randrange(2, 6))
-
-
-def convert_datetime(created_at: str) -> tuple[str, str]:
+def _convert_datetime(created_at: str) -> tuple[str, str]:
     utc_time = dt.strptime(created_at, '%a %b %d %H:%M:%S %z %Y')
     local_dt = utc_time.replace(tzinfo=pytz.utc).astimezone(LOCAL_TIME)
     return local_dt.strftime('%Y-%m-%d %H:%M:%S'), utc_time.strftime('%Y-%m-%d %H:%M:%S')
 
 
-def parse_tweets(posts: list, rule: str, file_name: str = './data/parsed_tweets.jsonl'):
-    # with open(file_name, 'a') as f:
+def _parse_posts(posts: list, rule: str, file_name: str = './data/parsed_tweets.jsonl'):
     for post in posts:
         if str(post.get('entryId', '')).startswith('tweet'):
             try:
@@ -73,7 +74,7 @@ def parse_tweets(posts: list, rule: str, file_name: str = './data/parsed_tweets.
                     else 'retweet' if post_content.get('retweeted_status_result')
                     else 'post'
                 )
-                local_time, utc = convert_datetime(legacy_data.get('created_at'))
+                local_time, utc = _convert_datetime(legacy_data.get('created_at'))
 
                 # Create a PostData model
                 post_data = PostData(
@@ -89,95 +90,106 @@ def parse_tweets(posts: list, rule: str, file_name: str = './data/parsed_tweets.
                     conversation_id=legacy_data.get('conversation_id_str'),
                     user_data=user_data,
                     entities=entities,
-                    rule=rule
+                    rule=rule,
+                    collection_time=dt.now().strftime('%Y-%m-%d_%H-%M-%S')
                 )
 
                 # f.write(json.dumps(post_data.model_dump()) + '\n')
-                produce_to_kafka('posts', post_data.model_dump(), post_data.language)
+                send_message(topic='posts', key=post_data.language, value=post_data.model_dump())
             except Exception as e:
-                print(post_data.model_dump())
+                print(post)
                 logger.error(f"{e}", exc_info=True)
 
 
-def parse_json(response: Response):
+def _parse_json(response: Response):
     if 'SearchTimeline' in response.url:
         try:
             query = json.loads(re.findall("{.+}(?=&)", unquote(response.request.url))[0])['rawQuery']
             instructions = response.json()['data']['search_by_raw_query']['search_timeline']['timeline']['instructions']
             for instruction in instructions:
                 if instruction.get('type', '') == 'TimelineAddEntries':
-                    logger.debug(f"{len(instruction['entries'])} posts found for query {query}")
-                    parse_tweets(instruction['entries'], query)
+                    data = instruction['entries']
+                    logger.debug(f"{len(data)} posts found for query={query}")
+                    # logger.debug(f"{len(data)} posts found", extra={"query": query})
+                    _parse_posts(data, query)
         except Exception as e:
             logger.warning(f"Warning @{inspect.currentframe().f_code.co_name} caller={inspect.currentframe().f_back.f_code.co_name} error={e}")
             pass
 
 
-def parse_headers(request):
+def _parse_headers(request: Request, user):
     if 'GetUserClaims' in request.url:
         try:
             headers = request.all_headers()
             key_list = [':authority', ':method', ':path', ':scheme']
             [headers.pop(key) for key in key_list]
-            with open('./stream/resources/headers.json', mode='w', encoding='utf-8') as headers_file:
-                json.dump(headers, headers_file)
+            redis_client.hset(f'user:{user}', mapping=headers)
+            logger.info("Saved user headers")
         except Exception as e:
+            logger.warning("Could not get user headers")
             logger.error(f"Error @{inspect.currentframe().f_code.co_name} caller={inspect.currentframe().f_back.f_code.co_name} error={e}", exc_info=True)
             pass
 
+def _login(login_page: Page, username: str, passcode: str, email: str) -> bool:
+    login_button = login_page.locator("//*[@id='react-root']/div/div/main/div/div[1]/a")
+    login_button.click()
+    logger.info(f"Attempting login with user {username}")
+    _random_sleep()
+    login_page.locator(selector="//input[@name='text']").click()
+    _random_sleep()
+    login_page.locator(selector="//input[@name='text']").type(username, delay=30)
+    _random_sleep()
+    login_page.keyboard.press("Enter")
+    _random_sleep()
+    if 'email' in login_page.locator('//h1[@role="heading"]').inner_text():
+        email_field = login_page.locator('//*[@id="layers"]/div/div/div/div/div/div/div[2]/div[2]/div/div/div[2]/div[2]/div[1]/div/div[2]/label/div/div[2]/div/input')
+        email_field.click()
+        email_field.type(email, delay=30)
+        _random_sleep()
+        login_page.keyboard.press("Enter")
+    _random_sleep()
+    login_page.locator(selector="//input[@name='password']").type(passcode, delay=30)
+    _random_sleep()
+    login_page.keyboard.press("Enter")
+    _random_sleep()
+    while login_page.url == f'{x_api()}/i/flow/login':
+        logger.debug("Waiting for login...")
+        login_page.wait_for_load_state("load")
+    else:
+        logger.info(f"User login successful")
+        return True
 
-def load_deck(playwright: Playwright, username, password, email):
+
+def _load_deck(playwright: Playwright, username, password, email):
     chromium = playwright.chromium
-    browser = chromium.launch(headless=True, args=["--start-maximized"])
+    browser = chromium.launch(headless=True, args=["--start-maximized", "--disable-gpu", "--disable-infobars", "--no-sandbox"])
     context = browser.new_context(no_viewport=True)
     page = context.new_page()
 
-    page.on("request", lambda request: parse_headers(request))
-    page.on("response", lambda response: parse_json(response))
+    page.on("request", lambda request: _parse_headers(request, username))
+    page.on("response", lambda response: _parse_json(response))
     page.set_default_timeout(100000000)
-    page.goto("https://pro.twitter.com")
+    page.goto(x_api())
     page.wait_for_load_state("networkidle")
-    login_button = page.locator("//*[@id='react-root']/div/div/main/div/div[1]/a")
-    login_button.click()
-    logger.info(f"Attempting login with user {username}")
-    random_sleep()
-    page.click("//input[@name='text']")
-    random_sleep()
-    page.locator(selector="//input[@name='text']").type(username, delay=30)
-    random_sleep()
-    page.keyboard.press("Enter")
-    random_sleep()
-    if 'email' in page.locator('//h1[@role="heading"]').inner_text():
-        if email == 'example@email.com':
-            logger.warning(f"Stopping run. Generic email entered {email}")
-            page.close()
-            browser.close()
-            return {}
-        email_field = page.locator('//*[@id="layers"]/div/div/div/div/div/div/div[2]/div[2]/div/div/div[2]/div[2]/div[1]/div/div[2]/label/div/div[2]/div/input')
-        email_field.click()
-        email_field.type(email, delay=30)
-        random_sleep()
-        page.keyboard.press("Enter")
-    random_sleep()
-    page.locator(selector="//input[@name='password']").type(password, delay=30)
-    random_sleep()
-    page.keyboard.press("Enter")
-    random_sleep()
-    logger.info(f"User login successful")
+
+    if not _login(page, username, password, email):
+        page.close()
+        browser.close()
+        raise logger.critical('Login unsuccessful')
 
     while True:
-        time.sleep(20)
+        time.sleep(5)
         page.mouse.wheel(0, 0)
         try:
-            status = requests.get("http://dexter-columns:5000/status").json()['status']
+            status = requests.get(f"{dexter_columns_host()}/status").json()['status']
             if status == 'reload':
-                res = requests.post("http://dexter-columns:5000/reload", json={"page": "running"})
-                logger.info(f"{res.json().get('message', {})}, reloading page") if res.status_code == 200 else logger.error(f"{res.text}")
+                res = requests.post(f"{dexter_columns_host()}/reload", json={"page": "running"})
+                logger.info(f"{res.json().get('message', {})} - Reloading page") if res.status_code == 200 else logger.error(f"{res.text}")
                 page.close()
                 page = context.new_page()
-                page.on("response", lambda response: parse_json(response))
+                page.on("response", lambda response: _parse_json(response))
                 page.wait_for_load_state('load')
-                page.goto("https://pro.twitter.com")
+                page.goto(x_api())
                 continue
         except Exception as e:
             logger.error(f"{e}")
@@ -185,10 +197,10 @@ def load_deck(playwright: Playwright, username, password, email):
 
         if dt.utcnow().strftime('%H:%M:%S') == '00:00:00':
             logger.info("New day - Reloading page")
-            page.goto("https://pro.twitter.com")
+            page.goto(x_api())
 
 
 def get_stream(user, password, email):
-    logger.info(f"Run started...")
+    logger.info(f"Welcome to Dexter")
     with sync_playwright() as pw:
-        load_deck(pw, user, password, email)
+        _load_deck(pw, user, password, email)
