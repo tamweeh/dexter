@@ -18,6 +18,8 @@ def dexter_columns_host():
 def redis_connection():
     return redis.Redis(host=os.getenv('REDIS_HOST'), port=os.getenv('REDIS_PORT'), db=os.getenv('REDIS_DB'))
 
-
 def kafka_brokers():
     return os.getenv('KAFKA_BROKERS')
+
+def log_path():
+    return os.getenv('LOG_PATH')

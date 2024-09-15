@@ -1,11 +1,11 @@
 import pyfiglet
 from termcolor import colored
-import logging
 
+from dexter import get_logger
 from dexter.utils import user_credentials
 from dexter.run import get_stream
 
-logger = logging.getLogger(__name__)
+logger = get_logger(log_name='main')
 
 def welcome(username, font='starwars'):
     try:

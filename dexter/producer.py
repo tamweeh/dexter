@@ -1,10 +1,10 @@
 import json
 from confluent_kafka import Producer
-import logging
 
+from dexter import get_logger
 from dexter.utils import kafka_brokers
 
-logger = logging.getLogger(__name__)
+logger = get_logger(log_name=__name__.split('.')[-1])
 
 conf = {
     'bootstrap.servers': kafka_brokers(),

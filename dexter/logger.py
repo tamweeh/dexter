@@ -1,6 +1,8 @@
 import datetime as dt
 import logging
 
+from .utils import log_path
+
 date = dt.datetime.now().strftime('%Y%m%d')
 # class OptionalFieldFilter(logging.Filter):
 #     def __init__(self, **kwargs):
@@ -8,14 +10,14 @@ date = dt.datetime.now().strftime('%Y%m%d')
 #         self.defaults = kwargs
 #
 #     def filter(self, record):
-#         # Check if the field exists, if not, set a default value
 #         for key, value in self.defaults.items():
 #             if not hasattr(record, key):
 #                 setattr(record, key, value)
 #         return True
 
 
-def get_logger(log_format='%(asctime)s app=%(name)s level=%(levelname)s message=%(message)s', log_name='', log_file_info=f'./logs/{date}.log', log_file_error=f'./logs/{date}.err'):
+def get_logger(log_format='%(asctime)s app=%(name)s level=%(levelname)s message="%(message)s"', log_name='',
+               log_file_info=f'{log_path()}{date}.log', log_file_error=f'{log_path()}{date}.err'):
     log = logging.getLogger(log_name)
     log_formatter = logging.Formatter(log_format)
 
@@ -38,7 +40,7 @@ def get_logger(log_format='%(asctime)s app=%(name)s level=%(levelname)s message=
     file_handler_error.setLevel(logging.ERROR)
     log.addHandler(file_handler_error)
 
-    # optional_filter = OptionalFieldFilter(query='N/A')
+    # optional_filter = OptionalFieldFilter(query='')
     # log.addFilter(optional_filter)
     log.setLevel(logging.DEBUG)
     log.propagate = False

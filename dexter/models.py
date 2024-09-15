@@ -39,4 +39,5 @@ class PostData(BaseModel):
     user_data: UserData
     entities: Entities
     rule: str
+    data_provider:  str
     collection_time: str
